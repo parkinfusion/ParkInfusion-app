@@ -1,312 +1,461 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Bell, BellOff, Clock, Settings, Edit3, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Bell, Clock, Edit2, Save, X, Smartphone, AlertCircle, Zap } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-const Notifications = () => {
-  const [notifications, setNotifications] = useState({
-    duodopa: true,
-    canula: true,
-    battery: true,
-    maintenance: true
+interface NotificationSettings {
+  enabled: boolean;
+  time: string;
+  lastNotified: string | null;
+  snoozedUntil: string | null;
+  customText: string;
+  browserNotificationsEnabled: boolean;
+}
+
+export default function Notifications() {
+  const [settings, setSettings] = useState<NotificationSettings>({
+    enabled: true,
+    time: '08:15',
+    lastNotified: null,
+    snoozedUntil: null,
+    customText: 'È ora della terapia! Ricorda di prendere i tuoi farmaci per il Parkinson.',
+    browserNotificationsEnabled: false
   });
-
-  const [reminderText, setReminderText] = useState('Ricordati di prendere la tua terapia Duodopa');
+  const [showAlert, setShowAlert] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const [isEditingText, setIsEditingText] = useState(false);
-  const [tempText, setTempText] = useState(reminderText);
-  const [reminderTime, setReminderTime] = useState('09:00');
+  const [tempText, setTempText] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
-  // Load saved settings on component mount
+  // Check notification permission on load
   useEffect(() => {
-    const savedNotifications = localStorage.getItem('notifications');
-    const savedReminderText = localStorage.getItem('reminderText');
-    const savedReminderTime = localStorage.getItem('reminderTime');
-
-    if (savedNotifications) {
-      setNotifications(JSON.parse(savedNotifications));
-    }
-    if (savedReminderText) {
-      setReminderText(savedReminderText);
-      setTempText(savedReminderText);
-    }
-    if (savedReminderTime) {
-      setReminderTime(savedReminderTime);
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
     }
   }, []);
 
-  // Save settings to localStorage whenever they change
+  // Load settings from localStorage
   useEffect(() => {
-    localStorage.setItem('notifications', JSON.stringify(notifications));
-  }, [notifications]);
+    const saved = localStorage.getItem('notificationSettings');
+    if (saved) {
+      const parsedSettings = JSON.parse(saved);
+      // Add default values for new properties
+      if (!parsedSettings.customText) {
+        parsedSettings.customText = 'È ora della terapia! Ricorda di prendere i tuoi farmaci per il Parkinson.';
+      }
+      if (parsedSettings.browserNotificationsEnabled === undefined) {
+        parsedSettings.browserNotificationsEnabled = false;
+      }
+      setSettings(parsedSettings);
+    }
+  }, []);
 
+  // Save settings to localStorage
   useEffect(() => {
-    localStorage.setItem('reminderText', reminderText);
-  }, [reminderText]);
+    localStorage.setItem('notificationSettings', JSON.stringify(settings));
+  }, [settings]);
 
+  // Update current time every minute
   useEffect(() => {
-    localStorage.setItem('reminderTime', reminderTime);
-  }, [reminderTime]);
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const handleNotificationToggle = (type: keyof typeof notifications) => {
-    setNotifications(prev => ({
-      ...prev,
-      [type]: !prev[type]
-    }));
+  // Check for notifications
+  useEffect(() => {
+    if (!settings.enabled) return;
+
+    const now = new Date();
+    const [hours, minutes] = settings.time.split(':').map(Number);
+    const notificationTime = new Date();
+    notificationTime.setHours(hours, minutes, 0, 0);
+
+    const currentTimeStr = now.toTimeString().slice(0, 5);
+    const notificationTimeStr = settings.time;
+    const today = now.toDateString();
+
+    // Check if it's time for notification
+    if (currentTimeStr === notificationTimeStr && settings.lastNotified !== today) {
+      // Check if snoozed
+      if (settings.snoozedUntil) {
+        const snoozeTime = new Date(settings.snoozedUntil);
+        if (now < snoozeTime) return;
+      }
+
+      // Show in-app alert
+      setShowAlert(true);
+      
+      // Show browser notification if enabled and permission granted
+      if (settings.browserNotificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('Promemoria Terapia ParkInfusion', {
+          body: settings.customText,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'therapy-reminder',
+          requireInteraction: true,
+          actions: [
+            { action: 'snooze', title: 'Snooze 15min' },
+            { action: 'dismiss', title: 'OK' }
+          ]
+        });
+      }
+      
+      setSettings(prev => ({ ...prev, lastNotified: today, snoozedUntil: null }));
+    }
+  }, [currentTime, settings.enabled, settings.time, settings.lastNotified, settings.snoozedUntil, settings.browserNotificationsEnabled, settings.customText]);
+
+  const handleToggle = (enabled: boolean) => {
+    setSettings(prev => ({ ...prev, enabled }));
   };
 
   const handleTimeChange = (time: string) => {
-    setReminderTime(time);
+    setSettings(prev => ({ ...prev, time }));
   };
 
-  const handleStartEdit = () => {
-    setTempText(reminderText);
+  const handleSnooze = () => {
+    const snoozeTime = new Date();
+    snoozeTime.setMinutes(snoozeTime.getMinutes() + 15);
+    setSettings(prev => ({ ...prev, snoozedUntil: snoozeTime.toISOString() }));
+    setShowAlert(false);
+  };
+
+  const handleDismiss = () => {
+    setShowAlert(false);
+  };
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert('Il tuo browser non supporta le notifiche push.');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      
+      if (permission === 'granted') {
+        setSettings(prev => ({ ...prev, browserNotificationsEnabled: true }));
+        
+        // Show test notification
+        const testNotification = new Notification('Notifiche Abilitate!', {
+          body: 'Ora riceverai promemoria anche quando l\'app è chiusa.',
+          icon: '/favicon.ico',
+          tag: 'test-notification'
+        });
+        
+        // Auto close test notification after 3 seconds
+        setTimeout(() => {
+          testNotification.close();
+        }, 3000);
+        
+        alert('✅ Notifiche browser abilitate con successo!\n\nOra riceverai promemoria anche quando l\'app è chiusa o minimizzata.');
+      } else if (permission === 'denied') {
+        alert('❌ Notifiche bloccate.\n\nPer abilitarle:\n1. Clicca sull\'icona del lucchetto nella barra degli indirizzi\n2. Seleziona "Consenti" per le notifiche\n3. Ricarica la pagina');
+      } else {
+        alert('⚠️ Permesso per le notifiche non concesso.');
+      }
+    } catch (error) {
+      console.error('Errore nel richiedere il permesso per le notifiche:', error);
+      alert('❌ Errore nell\'abilitare le notifiche. Riprova.');
+    }
+  };
+
+  const testNotification = () => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Test Promemoria Terapia', {
+        body: settings.customText,
+        icon: '/favicon.ico',
+        tag: 'test-reminder'
+      });
+      alert('🔔 Notifica di test inviata! Controlla le notifiche del tuo dispositivo.');
+    } else {
+      alert('⚠️ Prima devi abilitare le notifiche browser.');
+    }
+  };
+
+  const startEditingText = () => {
     setIsEditingText(true);
+    setTempText(settings.customText);
   };
 
-  const handleSaveText = () => {
-    setReminderText(tempText);
+  const saveCustomText = () => {
+    setSettings(prev => ({ ...prev, customText: tempText }));
     setIsEditingText(false);
+    setTempText('');
   };
 
-  const handleCancelEdit = () => {
-    setTempText(reminderText);
+  const cancelEditingText = () => {
     setIsEditingText(false);
+    setTempText('');
   };
 
-  const testAlert = () => {
-    alert(`🔔 PROMEMORIA TERAPIA PERSONALIZZATO!\n\n${reminderText}\n\n⏰ Orario: ${reminderTime}\n\n✅ Funziona perfettamente!`);
+  const getNotificationStatusText = () => {
+    if (!('Notification' in window)) return 'Non supportate';
+    switch (notificationPermission) {
+      case 'granted': return 'Abilitate ✅';
+      case 'denied': return 'Bloccate ❌';
+      default: return 'Non richieste';
+    }
+  };
+
+  const getNotificationStatusColor = () => {
+    switch (notificationPermission) {
+      case 'granted': return 'text-green-600';
+      case 'denied': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-green-100 p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* MEGA HEADER - IMPOSSIBLE TO MISS */}
-        <div className="text-center mb-8 bg-gradient-to-r from-red-500 to-purple-600 text-white p-8 rounded-2xl shadow-2xl">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Zap className="h-12 w-12 animate-pulse" />
-            <h1 className="text-5xl font-black">🚀 PROMEMORIA AGGIORNATO! 🚀</h1>
-            <Zap className="h-12 w-12 animate-pulse" />
-          </div>
-          <p className="text-2xl font-bold animate-bounce">
-            ✨ NUOVA VERSIONE - Gestisci i tuoi promemoria per dispositivi palmari ✨
-          </p>
-          <p className="text-lg mt-2 bg-yellow-400 text-black px-4 py-2 rounded-full inline-block font-bold">
-            🔥 SE VEDI QUESTO MESSAGGIO, L'AGGIORNAMENTO È RIUSCITO! 🔥
-          </p>
+    <div className="max-w-md mx-auto p-4 space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <Bell className="h-8 w-8 text-blue-600" />
+        <div>
+          <h1 className="text-3xl font-bold">Promemoria Terapia</h1>
+          <p className="text-gray-600">Configura i tuoi reminder per i farmaci</p>
         </div>
+      </div>
 
-        {/* SUPER VISIBLE UPDATE NOTICE */}
-        <Card className="border-4 border-red-500 bg-gradient-to-r from-yellow-100 to-orange-100 shadow-2xl">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3 text-red-800 mb-3">
-              <AlertCircle className="h-8 w-8 animate-spin" />
-              <p className="text-2xl font-black">🎉 AGGIORNAMENTO COMPLETATO CON SUCCESSO! 🎉</p>
+      {/* Notification Alert */}
+      {showAlert && (
+        <Alert className="mb-6 border-orange-200 bg-orange-50">
+          <Bell className="h-4 w-4 text-orange-600" />
+          <AlertDescription className="flex items-center justify-between">
+            <div>
+              <strong className="text-orange-800">Promemoria!</strong>
+              <p className="text-orange-700">{settings.customText}</p>
             </div>
-            <div className="bg-green-200 p-4 rounded-lg border-2 border-green-500">
-              <p className="text-lg font-bold text-green-800">
-                ✅ La pagina promemoria è stata completamente rinnovata!<br/>
-                ✅ Nuove funzionalità per dispositivi palmari attive!<br/>
-                ✅ Sistema di salvataggio migliorato!<br/>
-                ✅ Test promemoria funzionante!
+            <div className="flex gap-2 ml-4">
+              <Button size="sm" variant="outline" onClick={handleSnooze}>
+                <Clock className="h-4 w-4 mr-1" />
+                Snooze 15min
+              </Button>
+              <Button size="sm" onClick={handleDismiss}>
+                OK
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Settings Card */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            Impostazioni Notifiche
+          </CardTitle>
+          <CardDescription>
+            Configura quando ricevere i promemoria per la terapia
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Enable/Disable Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label className="text-base font-medium">Abilita Promemoria</Label>
+              <p className="text-sm text-gray-600">
+                Ricevi notifiche per ricordare la terapia
               </p>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Notification Settings */}
-        <Card className="border-4 border-blue-500 shadow-xl">
-          <CardHeader className="bg-blue-100">
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <Bell className="h-8 w-8" />
-              🔔 IMPOSTAZIONI AVVISI RINNOVATE
-            </CardTitle>
-            <CardDescription className="text-lg font-semibold">
-              Attiva o disattiva gli avvisi per i diversi eventi
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 p-6">
-            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border-2 border-blue-300">
-              <div>
-                <Label className="font-bold text-lg">🧪 Scorte Duodopa in esaurimento</Label>
-                <p className="text-base text-gray-700">Avviso quando le scorte sono basse</p>
-              </div>
-              <Switch
-                checked={notifications.duodopa}
-                onCheckedChange={() => handleNotificationToggle('duodopa')}
-                className="scale-150"
-              />
-            </div>
-            
-            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl border-2 border-green-300">
-              <div>
-                <Label className="font-bold text-lg">🔧 Scorte Canula in esaurimento</Label>
-                <p className="text-base text-gray-700">Avviso quando le canule sono poche</p>
-              </div>
-              <Switch
-                checked={notifications.canula}
-                onCheckedChange={() => handleNotificationToggle('canula')}
-                className="scale-150"
-              />
-            </div>
-            
-            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border-2 border-yellow-300">
-              <div>
-                <Label className="font-bold text-lg">🔋 Batteria pompa scarica</Label>
-                <p className="text-base text-gray-700">Avviso per batteria in esaurimento</p>
-              </div>
-              <Switch
-                checked={notifications.battery}
-                onCheckedChange={() => handleNotificationToggle('battery')}
-                className="scale-150"
-              />
-            </div>
-            
-            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-300">
-              <div>
-                <Label className="font-bold text-lg">🔧 Manutenzione programmata</Label>
-                <p className="text-base text-gray-700">Promemoria per controlli periodici</p>
-              </div>
-              <Switch
-                checked={notifications.maintenance}
-                onCheckedChange={() => handleNotificationToggle('maintenance')}
-                className="scale-150"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Daily Reminder - SUPER ENHANCED */}
-        <Card className="border-4 border-green-500 shadow-2xl bg-gradient-to-br from-green-50 to-blue-50">
-          <CardHeader className="bg-gradient-to-r from-green-200 to-blue-200">
-            <CardTitle className="flex items-center gap-2 text-3xl font-black text-green-800">
-              <Clock className="h-10 w-10 animate-pulse" />
-              ⏰ PROMEMORIA TERAPIA PERSONALIZZATO ⏰
-            </CardTitle>
-            <CardDescription className="text-xl font-bold text-green-700">
-              🆕 NUOVA FUNZIONALITÀ - Configura il tuo promemoria quotidiano!
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-8 p-8">
-            <div className="space-y-4">
-              <Label htmlFor="reminder-time" className="text-2xl font-bold text-blue-800">⏰ Orario Promemoria</Label>
-              <Input
-                id="reminder-time"
-                type="time"
-                value={reminderTime}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                className="w-full text-2xl p-4 border-4 border-blue-400 rounded-xl shadow-lg"
-              />
-              <p className="text-lg text-gray-700 font-semibold bg-yellow-100 p-3 rounded-lg">
-                🕘 Imposta l'orario per ricevere il promemoria giornaliero
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="text-2xl font-bold text-purple-800">💬 Messaggio Promemoria</Label>
-                {!isEditingText && (
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={handleStartEdit}
-                    className="border-4 border-purple-400 text-purple-700 hover:bg-purple-100 text-lg font-bold"
-                  >
-                    <Edit2 className="h-6 w-6 mr-2" />
-                    ✏️ MODIFICA TESTO
-                  </Button>
-                )}
-              </div>
-              
-              {isEditingText ? (
-                <div className="space-y-4">
-                  <Textarea
-                    value={tempText}
-                    onChange={(e) => setTempText(e.target.value)}
-                    placeholder="Inserisci il tuo messaggio personalizzato..."
-                    className="min-h-[120px] text-xl border-4 border-purple-400 rounded-xl p-4"
-                  />
-                  <div className="flex gap-4">
-                    <Button onClick={handleSaveText} className="flex-1 bg-green-600 hover:bg-green-700 text-xl py-4">
-                      <Save className="h-6 w-6 mr-2" />
-                      💾 SALVA MODIFICHE
-                    </Button>
-                    <Button variant="outline" onClick={handleCancelEdit} className="flex-1 text-xl py-4 border-2">
-                      <X className="h-6 w-6 mr-2" />
-                      ❌ ANNULLA
-                    </Button>
-                  </div>
-                </div>
+            <div className="flex items-center gap-2">
+              {settings.enabled ? (
+                <Bell className="h-4 w-4 text-green-600" />
               ) : (
-                <div className="p-6 bg-gradient-to-r from-blue-100 to-purple-100 rounded-xl border-4 border-blue-300 shadow-lg">
-                  <p className="text-xl text-blue-900 font-bold">💬 "{reminderText}"</p>
+                <BellOff className="h-4 w-4 text-gray-400" />
+              )}
+              <Switch
+                checked={settings.enabled}
+                onCheckedChange={handleToggle}
+              />
+            </div>
+          </div>
+
+          {/* Time Setting */}
+          <div className="space-y-2">
+            <Label htmlFor="notification-time" className="text-base font-medium">
+              Orario Promemoria
+            </Label>
+            <div className="flex items-center gap-4">
+              <Input
+                id="notification-time"
+                type="time"
+                value={settings.time}
+                onChange={(e) => handleTimeChange(e.target.value)}
+                disabled={!settings.enabled}
+                className="w-32"
+              />
+              <span className="text-sm text-gray-600">
+                Orario corrente: {currentTime.toLocaleTimeString('it-IT', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}
+              </span>
+            </div>
+          </div>
+
+          {/* Custom Text Setting */}
+          <div className="space-y-2">
+            <Label className="text-base font-medium">Testo Promemoria</Label>
+            <p className="text-sm text-gray-600 mb-2">
+              Personalizza il messaggio che apparirà nel promemoria
+            </p>
+            {isEditingText ? (
+              <div className="space-y-2">
+                <Input
+                  value={tempText}
+                  onChange={(e) => setTempText(e.target.value)}
+                  placeholder="Inserisci il testo del promemoria"
+                  disabled={!settings.enabled}
+                />
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    onClick={saveCustomText}
+                    disabled={!settings.enabled}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    Salva
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={cancelEditingText}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Annulla
+                  </Button>
                 </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <p className="flex-1 text-sm">{settings.customText}</p>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={startEditingText}
+                  disabled={!settings.enabled}
+                >
+                  <Edit3 className="h-4 w-4 mr-1" />
+                  Modifica
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Browser Notifications */}
+          <div className="space-y-3">
+            <Label className="text-base font-medium">Notifiche Browser</Label>
+            <p className="text-sm text-gray-600">
+              Abilita le notifiche del browser per ricevere promemoria anche quando l'app è chiusa
+            </p>
+            
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm">
+                <span className="font-medium">Stato:</span>{' '}
+                <span className={getNotificationStatusColor()}>
+                  {getNotificationStatusText()}
+                </span>
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={requestNotificationPermission}
+                disabled={!settings.enabled || notificationPermission === 'granted'}
+                className="flex-1"
+              >
+                <Bell className="h-4 w-4 mr-2" />
+                {notificationPermission === 'granted' ? 'Già Abilitate' : 'Abilita Notifiche'}
+              </Button>
+              
+              {notificationPermission === 'granted' && (
+                <Button 
+                  variant="outline" 
+                  onClick={testNotification}
+                  disabled={!settings.enabled}
+                  className="flex-1"
+                >
+                  🔔 Test
+                </Button>
               )}
             </div>
+          </div>
 
-            <div className="pt-6 border-t-4 border-orange-300">
-              <Button 
-                onClick={testAlert} 
-                className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white text-2xl py-6 rounded-xl shadow-2xl transform hover:scale-105 transition-all duration-200" 
-                size="lg"
-              >
-                <Bell className="h-8 w-8 mr-3 animate-bounce" />
-                🔔 PROVA PROMEMORIA SUBITO! 🔔
-              </Button>
-              <p className="text-lg text-center mt-4 font-bold bg-orange-100 p-3 rounded-lg">
-                👆 Clicca qui per testare il promemoria personalizzato!
+          {/* Status Info */}
+          <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+            <h4 className="font-medium">Stato Attuale</h4>
+            <div className="text-sm space-y-1">
+              <p>
+                <span className="font-medium">Promemoria:</span>{' '}
+                <span className={settings.enabled ? 'text-green-600' : 'text-gray-500'}>
+                  {settings.enabled ? 'Attivo' : 'Disattivato'}
+                </span>
               </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Status Info - SUPER VISIBLE */}
-        <Card className="border-4 border-green-600 shadow-2xl bg-gradient-to-br from-green-100 to-emerald-100">
-          <CardHeader className="bg-gradient-to-r from-green-300 to-emerald-300">
-            <CardTitle className="flex items-center gap-2 text-2xl font-black text-green-800">
-              <Smartphone className="h-8 w-8" />
-              📱 STATO PROMEMORIA ATTIVO
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="bg-gradient-to-r from-green-200 to-emerald-200 p-6 rounded-xl border-4 border-green-400 shadow-lg">
-              <div className="space-y-3">
-                <p className="font-black text-2xl text-green-900">✅ PROMEMORIA CONFIGURATO E ATTIVO!</p>
-                <p className="text-xl text-green-800 bg-white p-2 rounded-lg">
-                  <strong>⏰ Orario:</strong> {reminderTime}
+              {settings.enabled && (
+                <p>
+                  <span className="font-medium">Prossimo promemoria:</span>{' '}
+                  <span className="text-blue-600">{settings.time}</span>
                 </p>
-                <p className="text-xl text-green-800 bg-white p-2 rounded-lg">
-                  <strong>💬 Messaggio:</strong> "{reminderText}"
+              )}
+              <p>
+                <span className="font-medium">Notifiche browser:</span>{' '}
+                <span className={settings.browserNotificationsEnabled ? 'text-green-600' : 'text-gray-500'}>
+                  {settings.browserNotificationsEnabled ? 'Abilitate' : 'Disabilitate'}
+                </span>
+              </p>
+              {settings.snoozedUntil && (
+                <p>
+                  <span className="font-medium">Snooze fino a:</span>{' '}
+                  <span className="text-orange-600">
+                    {new Date(settings.snoozedUntil).toLocaleTimeString('it-IT', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
                 </p>
-              </div>
+              )}
             </div>
-            
-            <div className="mt-6 space-y-3 text-lg font-semibold">
-              <p className="bg-blue-100 p-3 rounded-lg">📱 Ottimizzato per dispositivi palmari</p>
-              <p className="bg-purple-100 p-3 rounded-lg">💾 Salvataggio automatico attivo</p>
-              <p className="bg-orange-100 p-3 rounded-lg">🔔 Test promemoria sempre disponibile</p>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* FINAL CONFIRMATION */}
-        <Card className="border-4 border-rainbow bg-gradient-to-r from-red-100 via-yellow-100 via-green-100 to-blue-100 shadow-2xl">
-          <CardContent className="p-8 text-center">
-            <h2 className="text-4xl font-black mb-4">🎊 CONGRATULAZIONI! 🎊</h2>
-            <p className="text-2xl font-bold text-purple-800">
-              Se riesci a leggere questo messaggio, l'aggiornamento è stato applicato con successo!
-            </p>
-            <p className="text-xl mt-4 bg-yellow-300 p-4 rounded-xl font-bold">
-              🚀 La tua app ParkInfusion è ora aggiornata con le nuove funzionalità! 🚀
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Info Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Come Funziona</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+            <p>L'app controllerà ogni minuto se è l'ora del promemoria</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+            <p>Quando è l'ora, apparirà un alert con il tuo messaggio personalizzato</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+            <p>Con le notifiche browser abilitate, riceverai anche notifiche push native</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+            <p>"Snooze" rimanda il promemoria di 15 minuti</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+            <p>Riceverai solo un promemoria al giorno per orario impostato</p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
-};
-
-export default Notifications;
+}
