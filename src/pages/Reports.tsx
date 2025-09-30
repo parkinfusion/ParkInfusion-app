@@ -144,20 +144,23 @@ export default function Reports() {
           key={day}
           className={`h-14 border border-gray-200 p-1 relative flex flex-col ${
             isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'
-          } ${therapy ? 'bg-green-50' : ''}`}
+          } ${
+            therapy 
+              ? therapy.type === 'duodopa-canula' 
+                ? 'bg-purple-100 border-purple-300' 
+                : 'bg-green-100 border-green-300'
+              : ''
+          }`}
         >
           <div className={`text-xs font-medium ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>
             {day}
           </div>
           {therapy && (
             <div className="flex-1 flex items-center justify-center">
-              <div className={`w-2 h-2 rounded-full ${
+              <div className={`w-4 h-4 rounded-full ${
                 therapy.type === 'duodopa-canula' ? 'bg-purple-500' : 'bg-green-500'
               }`}></div>
             </div>
-          )}
-          {therapy && (
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-green-500 rounded-b"></div>
           )}
         </div>
       );
@@ -303,17 +306,17 @@ export default function Reports() {
 
                 {/* Legend */}
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="text-xs text-gray-600 space-y-1">
+                  <div className="text-xs text-gray-600 space-y-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <div className="w-4 h-4 bg-green-500 rounded-full"></div>
                       <span>Duodopa</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                      <div className="w-4 h-4 bg-purple-500 rounded-full"></div>
                       <span>Duodopa + Canula</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
+                      <div className="w-4 h-4 bg-blue-100 border-2 border-blue-300 rounded"></div>
                       <span>Oggi</span>
                     </div>
                   </div>
@@ -337,7 +340,7 @@ export default function Reports() {
                     therapyLogs.slice(0, 5).map((log) => (
                       <div key={log.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${
+                          <div className={`w-4 h-4 rounded-full ${
                             log.type === 'duodopa-canula' ? 'bg-purple-500' : 'bg-green-500'
                           }`}></div>
                           <div>
