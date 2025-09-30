@@ -13,6 +13,7 @@ interface NotificationSettings {
   lastNotified: string | null;
   snoozedUntil: string | null;
   customText: string;
+  browserNotificationsEnabled: boolean;
 }
 
 export default function Notifications() {
@@ -21,21 +22,33 @@ export default function Notifications() {
     time: '08:15',
     lastNotified: null,
     snoozedUntil: null,
-    customText: 'È ora della terapia! Ricorda di prendere i tuoi farmaci per il Parkinson.'
+    customText: 'È ora della terapia! Ricorda di prendere i tuoi farmaci per il Parkinson.',
+    browserNotificationsEnabled: false
   });
   const [showAlert, setShowAlert] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isEditingText, setIsEditingText] = useState(false);
   const [tempText, setTempText] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  // Check notification permission on load
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
 
   // Load settings from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('notificationSettings');
     if (saved) {
       const parsedSettings = JSON.parse(saved);
-      // Add default customText if it doesn't exist
+      // Add default values for new properties
       if (!parsedSettings.customText) {
         parsedSettings.customText = 'È ora della terapia! Ricorda di prendere i tuoi farmaci per il Parkinson.';
+      }
+      if (parsedSettings.browserNotificationsEnabled === undefined) {
+        parsedSettings.browserNotificationsEnabled = false;
       }
       setSettings(parsedSettings);
     }
@@ -75,10 +88,27 @@ export default function Notifications() {
         if (now < snoozeTime) return;
       }
 
+      // Show in-app alert
       setShowAlert(true);
+      
+      // Show browser notification if enabled and permission granted
+      if (settings.browserNotificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('Promemoria Terapia ParkInfusion', {
+          body: settings.customText,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'therapy-reminder',
+          requireInteraction: true,
+          actions: [
+            { action: 'snooze', title: 'Snooze 15min' },
+            { action: 'dismiss', title: 'OK' }
+          ]
+        });
+      }
+      
       setSettings(prev => ({ ...prev, lastNotified: today, snoozedUntil: null }));
     }
-  }, [currentTime, settings.enabled, settings.time, settings.lastNotified, settings.snoozedUntil]);
+  }, [currentTime, settings.enabled, settings.time, settings.lastNotified, settings.snoozedUntil, settings.browserNotificationsEnabled, settings.customText]);
 
   const handleToggle = (enabled: boolean) => {
     setSettings(prev => ({ ...prev, enabled }));
@@ -100,11 +130,52 @@ export default function Notifications() {
   };
 
   const requestNotificationPermission = async () => {
-    if ('Notification' in window) {
+    if (!('Notification' in window)) {
+      alert('Il tuo browser non supporta le notifiche push.');
+      return;
+    }
+
+    try {
       const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      
       if (permission === 'granted') {
-        alert('Notifiche browser abilitate! Riceverai promemoria anche quando l\'app è chiusa.');
+        setSettings(prev => ({ ...prev, browserNotificationsEnabled: true }));
+        
+        // Show test notification
+        const testNotification = new Notification('Notifiche Abilitate!', {
+          body: 'Ora riceverai promemoria anche quando l\'app è chiusa.',
+          icon: '/favicon.ico',
+          tag: 'test-notification'
+        });
+        
+        // Auto close test notification after 3 seconds
+        setTimeout(() => {
+          testNotification.close();
+        }, 3000);
+        
+        alert('✅ Notifiche browser abilitate con successo!\n\nOra riceverai promemoria anche quando l\'app è chiusa o minimizzata.');
+      } else if (permission === 'denied') {
+        alert('❌ Notifiche bloccate.\n\nPer abilitarle:\n1. Clicca sull\'icona del lucchetto nella barra degli indirizzi\n2. Seleziona "Consenti" per le notifiche\n3. Ricarica la pagina');
+      } else {
+        alert('⚠️ Permesso per le notifiche non concesso.');
       }
+    } catch (error) {
+      console.error('Errore nel richiedere il permesso per le notifiche:', error);
+      alert('❌ Errore nell\'abilitare le notifiche. Riprova.');
+    }
+  };
+
+  const testNotification = () => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Test Promemoria Terapia', {
+        body: settings.customText,
+        icon: '/favicon.ico',
+        tag: 'test-reminder'
+      });
+      alert('🔔 Notifica di test inviata! Controlla le notifiche del tuo dispositivo.');
+    } else {
+      alert('⚠️ Prima devi abilitare le notifiche browser.');
     }
   };
 
@@ -122,6 +193,23 @@ export default function Notifications() {
   const cancelEditingText = () => {
     setIsEditingText(false);
     setTempText('');
+  };
+
+  const getNotificationStatusText = () => {
+    if (!('Notification' in window)) return 'Non supportate';
+    switch (notificationPermission) {
+      case 'granted': return 'Abilitate ✅';
+      case 'denied': return 'Bloccate ❌';
+      default: return 'Non richieste';
+    }
+  };
+
+  const getNotificationStatusColor = () => {
+    switch (notificationPermission) {
+      case 'granted': return 'text-green-600';
+      case 'denied': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
   };
 
   return (
@@ -263,19 +351,43 @@ export default function Notifications() {
           </div>
 
           {/* Browser Notifications */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label className="text-base font-medium">Notifiche Browser</Label>
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="text-sm text-gray-600">
               Abilita le notifiche del browser per ricevere promemoria anche quando l'app è chiusa
             </p>
-            <Button 
-              variant="outline" 
-              onClick={requestNotificationPermission}
-              disabled={!settings.enabled}
-            >
-              <Bell className="h-4 w-4 mr-2" />
-              Abilita Notifiche Browser
-            </Button>
+            
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm">
+                <span className="font-medium">Stato:</span>{' '}
+                <span className={getNotificationStatusColor()}>
+                  {getNotificationStatusText()}
+                </span>
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={requestNotificationPermission}
+                disabled={!settings.enabled || notificationPermission === 'granted'}
+                className="flex-1"
+              >
+                <Bell className="h-4 w-4 mr-2" />
+                {notificationPermission === 'granted' ? 'Già Abilitate' : 'Abilita Notifiche'}
+              </Button>
+              
+              {notificationPermission === 'granted' && (
+                <Button 
+                  variant="outline" 
+                  onClick={testNotification}
+                  disabled={!settings.enabled}
+                  className="flex-1"
+                >
+                  🔔 Test
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Status Info */}
@@ -283,7 +395,7 @@ export default function Notifications() {
             <h4 className="font-medium">Stato Attuale</h4>
             <div className="text-sm space-y-1">
               <p>
-                <span className="font-medium">Stato:</span>{' '}
+                <span className="font-medium">Promemoria:</span>{' '}
                 <span className={settings.enabled ? 'text-green-600' : 'text-gray-500'}>
                   {settings.enabled ? 'Attivo' : 'Disattivato'}
                 </span>
@@ -294,6 +406,12 @@ export default function Notifications() {
                   <span className="text-blue-600">{settings.time}</span>
                 </p>
               )}
+              <p>
+                <span className="font-medium">Notifiche browser:</span>{' '}
+                <span className={settings.browserNotificationsEnabled ? 'text-green-600' : 'text-gray-500'}>
+                  {settings.browserNotificationsEnabled ? 'Abilitate' : 'Disabilitate'}
+                </span>
+              </p>
               {settings.snoozedUntil && (
                 <p>
                   <span className="font-medium">Snooze fino a:</span>{' '}
@@ -326,15 +444,15 @@ export default function Notifications() {
           </div>
           <div className="flex items-start gap-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+            <p>Con le notifiche browser abilitate, riceverai anche notifiche push native</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
             <p>"Snooze" rimanda il promemoria di 15 minuti</p>
           </div>
           <div className="flex items-start gap-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
             <p>Riceverai solo un promemoria al giorno per orario impostato</p>
-          </div>
-          <div className="flex items-start gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-            <p>Puoi personalizzare il testo del promemoria usando il pulsante "Modifica"</p>
           </div>
         </CardContent>
       </Card>
